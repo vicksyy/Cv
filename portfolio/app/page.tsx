@@ -69,7 +69,6 @@ export default function SpaceBackground() {
     ];
 
     const textMeshes: THREE.Mesh[] = [];
-    const loader = new THREE.TextureLoader();
 
     textLines.forEach((line, i) => {
       const canvas = document.createElement("canvas");
@@ -104,7 +103,7 @@ export default function SpaceBackground() {
     });
 
     // ---------------------
-    // GIANT PARTICLE FIELD
+    // PARTICULAS
     // ---------------------
     const particlesCount = 6000;
     const positions = new Float32Array(particlesCount * 3);
@@ -130,7 +129,7 @@ export default function SpaceBackground() {
     scene.add(particles);
 
     // ---------------------
-    // PARALLAX MOUSE
+    // MOUSE PARALLAX
     // ---------------------
     const mouse = { x: 0, y: 0 };
     window.addEventListener("mousemove", (e) => {
@@ -139,9 +138,13 @@ export default function SpaceBackground() {
     });
 
     // ---------------------
-    // LENIS SMOOTH SCROLL
+    // LENIS SCROLL
     // ---------------------
     const lenis = new Lenis({ smoothWheel: true });
+
+    // reset scroll al inicio
+    window.scrollTo({ top: 0 });
+    lenis.scrollTo(0);
 
     function raf(t: number) {
       lenis.raf(t);
@@ -151,38 +154,46 @@ export default function SpaceBackground() {
 
     let scrollPos = 0;
 
-    lenis.on("scroll", ({ scroll }) => {
+    const updatePositions = (scroll: number) => {
       scrollPos = scroll;
 
-      // OVNI avanza hacia el fondo
       ovniGroup.position.z = -scroll * 0.02;
 
-      // TEXTOS salen del fondo y se quedan atrás
       textMeshes.forEach((mesh, i) => {
         const baseZ = -10 - i * 20;
         mesh.position.z = baseZ + scroll * 0.02;
-
-        // fade out cuando ya pasaste la frase
-        const dist = Math.abs(mesh.position.z - ovniGroup.position.z);
-        // mesh.material.opacity = Math.min(1, Math.max(0, 1 - dist / 18));
       });
+    };
+
+    // inicializa posición
+    updatePositions(0);
+
+    lenis.on("scroll", ({ scroll }) => {
+      updatePositions(scroll);
     });
 
     // ---------------------
-    // ANIMATION LOOP
+    // ANIMATE
     // ---------------------
     const camTarget = new THREE.Vector3();
 
     function animate() {
       particles.rotation.y += 0.0003;
 
-      camTarget.set(
+      const MIN_DISTANCE = 6;
+      const desiredCamPos = new THREE.Vector3(
         mouse.x * 0.3,
         1 + mouse.y * 0.3,
-        ovniGroup.position.z + 6
+        ovniGroup.position.z + MIN_DISTANCE
       );
 
-      camera.position.lerp(camTarget, 0.05);
+      const camToUfoDist = desiredCamPos.distanceTo(ovniGroup.position);
+      if (camToUfoDist < MIN_DISTANCE) {
+        const dir = desiredCamPos.clone().sub(ovniGroup.position).normalize();
+        desiredCamPos.copy(ovniGroup.position).add(dir.multiplyScalar(MIN_DISTANCE));
+      }
+
+      camera.position.lerp(desiredCamPos, 0.05);
       camera.lookAt(ovniGroup.position);
 
       renderer.render(scene, camera);
