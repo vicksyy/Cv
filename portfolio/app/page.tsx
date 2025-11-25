@@ -1,8 +1,6 @@
-// components/SpaceBackground.tsx
 'use client';
 import { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { gsap } from 'gsap';
 import Lenis from 'lenis';
 
 export default function SpaceBackground() {
@@ -12,117 +10,206 @@ export default function SpaceBackground() {
     const mount = mountRef.current;
     if (!mount) return;
 
-    // Scene
+    // ---------------------
+    // SCENE + CAMERA
+    // ---------------------
     const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x000000, 15, 120);
 
-    // Camera
     const camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      2000
     );
-    camera.position.z = 5;
+    camera.position.set(0, 2, 6);
 
-    // Renderer
+    // ---------------------
+    // RENDERER
+    // ---------------------
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x000000);
     mount.appendChild(renderer.domElement);
 
-    // Particles
-    const particlesCount = 2000;
+    // ---------------------
+    // LIGHTS
+    // ---------------------
+    const ambient = new THREE.AmbientLight(0xffffff, 1);
+    const directional = new THREE.DirectionalLight(0xffffff, 1.5);
+    directional.position.set(5, 10, 7);
+    scene.add(ambient, directional);
+
+    // ---------------------
+    // OVNI
+    // ---------------------
+    const ovniGroup = new THREE.Group();
+    scene.add(ovniGroup);
+
+    ovniGroup.rotation.x = -0.3; // inclinado hacia adelante
+
+    import("three/examples/jsm/loaders/GLTFLoader").then(({ GLTFLoader }) => {
+      const loader = new GLTFLoader();
+      loader.load("/models/ovni.glb", (gltf: any) => {
+        const model = gltf.scene;
+        model.scale.set(0.5, 0.5, 0.5);
+        ovniGroup.add(model);
+      });
+    });
+
+    // ---------------------
+    // 3D TEXT PANELS
+    // ---------------------
+    const textLines = [
+      "Hace mucho tiempo...",
+      "En una galaxia muy muy lejana...",
+      "Un OVNI apareció en la oscuridad...",
+      "Y todo cambió para siempre..."
+    ];
+
+    const textMeshes: THREE.Mesh[] = [];
+    const loader = new THREE.TextureLoader();
+
+    textLines.forEach((line, i) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2048;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "yellow";
+      ctx.font = "80px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(line, canvas.width / 2, canvas.height / 2 + 30);
+
+      const texture = new THREE.CanvasTexture(canvas);
+
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+      });
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(5, 0.7),
+        material
+      );
+
+      mesh.position.set(
+        0,
+        -1 + i * -3,
+        -10 - i * 20 // salen del fondo
+      );
+
+      textMeshes.push(mesh);
+      scene.add(mesh);
+    });
+
+    // ---------------------
+    // GIANT PARTICLE FIELD
+    // ---------------------
+    const particlesCount = 6000;
     const positions = new Float32Array(particlesCount * 3);
 
-    for (let i = 0; i < particlesCount * 3; i++) {
-      positions[i] = (Math.random() - 0.5) * 20;
+    for (let i = 0; i < particlesCount * 3; i += 3) {
+      positions[i] = (Math.random() - 0.5) * 200;
+      positions[i + 1] = (Math.random() - 0.5) * 200;
+      positions[i + 2] = (Math.random() - 0.5) * 200;
     }
 
     const particlesGeometry = new THREE.BufferGeometry();
     particlesGeometry.setAttribute(
-      'position',
+      "position",
       new THREE.BufferAttribute(positions, 3)
     );
 
     const particlesMaterial = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.02,
+      size: 0.05,
     });
 
     const particles = new THREE.Points(particlesGeometry, particlesMaterial);
     scene.add(particles);
 
-    // Mouse interaction
+    // ---------------------
+    // PARALLAX MOUSE
+    // ---------------------
     const mouse = { x: 0, y: 0 };
-    const mouseHandler = (event: MouseEvent) => {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    };
-    window.addEventListener('mousemove', mouseHandler);
+    window.addEventListener("mousemove", (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
 
-    // Smooth scroll with Lenis
-    const lenis = new Lenis();
-    function raf(time: number) {
-      lenis.raf(time);
+    // ---------------------
+    // LENIS SMOOTH SCROLL
+    // ---------------------
+    const lenis = new Lenis({ smoothWheel: true });
+
+    function raf(t: number) {
+      lenis.raf(t);
       requestAnimationFrame(raf);
     }
     requestAnimationFrame(raf);
 
-    // Animation loop
-    const animate = () => {
-      particles.rotation.y += 0.0005;
+    let scrollPos = 0;
 
-      gsap.to(camera.position, {
-        x: mouse.x * 0.5,
-        y: mouse.y * 0.5,
-        duration: 2,
-        ease: 'power2.out',
+    lenis.on("scroll", ({ scroll }) => {
+      scrollPos = scroll;
+
+      // OVNI avanza hacia el fondo
+      ovniGroup.position.z = -scroll * 0.02;
+
+      // TEXTOS salen del fondo y se quedan atrás
+      textMeshes.forEach((mesh, i) => {
+        const baseZ = -10 - i * 20;
+        mesh.position.z = baseZ + scroll * 0.02;
+
+        // fade out cuando ya pasaste la frase
+        const dist = Math.abs(mesh.position.z - ovniGroup.position.z);
+        // mesh.material.opacity = Math.min(1, Math.max(0, 1 - dist / 18));
       });
+    });
+
+    // ---------------------
+    // ANIMATION LOOP
+    // ---------------------
+    const camTarget = new THREE.Vector3();
+
+    function animate() {
+      particles.rotation.y += 0.0003;
+
+      camTarget.set(
+        mouse.x * 0.3,
+        1 + mouse.y * 0.3,
+        ovniGroup.position.z + 6
+      );
+
+      camera.position.lerp(camTarget, 0.05);
+      camera.lookAt(ovniGroup.position);
 
       renderer.render(scene, camera);
       requestAnimationFrame(animate);
-    };
+    }
     animate();
 
-    // Resize handler
-    const handleResize = () => {
+    // ---------------------
+    // RESIZE
+    // ---------------------
+    function handleResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener('resize', handleResize);
+    }
+    window.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('mousemove', mouseHandler);
-      mount.removeChild(renderer.domElement);
-      particlesGeometry.dispose();
-      particlesMaterial.dispose();
+      window.removeEventListener("resize", handleResize);
       renderer.dispose();
     };
   }, []);
 
-  return <div ref={mountRef} className="fixed inset-0 -z-10" />;
+  return (
+    <>
+      <div ref={mountRef} className="fixed inset-0 -z-10" />
+      <div style={{ height: "600vh" }} />
+    </>
+  );
 }
-
-// --------------------------------------------------
-// USO EN NEXT.JS (app/page.tsx)
-// --------------------------------------------------
-// import SpaceBackground from '../components/SpaceBackground';
-//
-// export default function Home() {
-//   return (
-//     <main className="relative w-full h-screen overflow-hidden">
-//       <SpaceBackground />
-//       <section className="relative z-10 flex items-center justify-center h-full">
-//         <h1 className="text-white text-5xl font-bold">Mi Web</h1>
-//       </section>
-//     </main>
-//   );
-// }
-
-// --------------------------------------------------
-// RUTA RECOMENDADA DENTRO DE TU PROYECTO NEXT.JS
-// --------------------------------------------------
-// /app/components/SpaceBackground.tsx
